@@ -1,18 +1,88 @@
 use std::str::FromStr;
 
-use anyhow::Context;
-use chrono::{DateTime, Utc};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Local};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+
+pub struct Registry {
+    url: String,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self {
+            url: "https://get.greycat.io/files".to_string(),
+        }
+    }
+}
+
+impl Registry {
+    pub fn list_package_versions(
+        &self,
+        name: &str,
+        branch: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<PackageVersion>> {
+        let entries: Vec<File> = ureq::get(&format!("{}/{name}/{branch}", self.url))
+            .call()
+            .with_context(|| format!("no version found for \"{name}/{branch}\""))?
+            .into_json()?;
+
+        let mut versions = Vec::default();
+
+        if name == "core" {
+            // 'core' is target-dependant, meaning we have to browse one more level to get
+            // to the different versions
+            for file in entries {
+                if file.path.ends_with('/') {
+                    let entries: Vec<File> = ureq::get(&format!("{}/{}", self.url, file.path))
+                        .call()
+                        .with_context(|| format!("no version found for \"{name}/{branch}\""))?
+                        .into_json()?;
+                    for file in entries {
+                        if file.path.ends_with('/') {
+                            add_entries(file, &mut versions)?;
+                        }
+                    }
+                }
+            }
+        } else {
+            for file in entries {
+                if file.path.ends_with('/') {
+                    add_entries(file, &mut versions)?;
+                }
+            }
+        }
+
+        versions.sort();
+        versions.dedup();
+        if let Some(limit) = limit {
+            let len = versions.len();
+            if len > limit {
+                versions = versions.drain(versions.len() - limit..).collect();
+            }
+        }
+
+        Ok(versions)
+    }
+
+    pub fn list_package_branches(&self, name: &str) -> Result<Vec<File>> {
+        let branches = ureq::get(&format!("{}/{name}/", self.url))
+            .call()?
+            .into_json()?;
+        Ok(branches)
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
     #[serde(deserialize_with = "greycat_time_to_datetime_utc")]
-    pub last_modification: DateTime<Utc>,
+    pub last_modification: DateTime<Local>,
     pub path: String,
 }
 
-fn greycat_time_to_datetime_utc<'de, D>(de: D) -> Result<DateTime<Utc>, D::Error>
+fn greycat_time_to_datetime_utc<'de, D>(de: D) -> Result<DateTime<Local>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -26,18 +96,20 @@ where
 
     let time = GreyCatTime::deserialize(de)?;
     let micros = ((time.epoch as i64) * 1_000_000) + (time.us as i64);
-    DateTime::<Utc>::from_timestamp_micros(micros).ok_or_else(|| D::Error::custom("invalid time"))
+    let date =
+        DateTime::from_timestamp_micros(micros).ok_or_else(|| D::Error::custom("invalid time"))?;
+    Ok(date.with_timezone(&Local))
 }
 
 #[derive(Debug)]
 pub struct PackageVersion {
-    last_modified: DateTime<Utc>,
+    last_modified: DateTime<Local>,
     version: Version,
 }
 
 impl std::fmt::Display for PackageVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:20} {}", self.version, self.last_modified)
+        write!(f, "{:20} {}", self.version, self.last_modified.format("%Y-%m-%d %H:%M:%s"))
     }
 }
 
@@ -59,55 +131,6 @@ impl std::cmp::PartialOrd for PackageVersion {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-pub fn list_package_versions(
-    name: &str,
-    branch: &str,
-    limit: Option<usize>,
-) -> anyhow::Result<Vec<PackageVersion>> {
-    let entries: Vec<File> = ureq::get(&format!("https://get.greycat.io/files/{name}/{branch}"))
-        .call()
-        .with_context(|| format!("no version found for \"{name}/{branch}\""))?
-        .into_json()?;
-
-    let mut versions = Vec::default();
-
-    if name == "core" {
-        // 'core' is target-dependant, meaning we have to browse one more level to get
-        // to the different versions
-        for file in entries {
-            if file.path.ends_with('/') {
-                let entries: Vec<File> =
-                    ureq::get(&format!("https://get.greycat.io/files/{}", file.path))
-                        .call()
-                        .with_context(|| format!("no version found for \"{name}/{branch}\""))?
-                        .into_json()?;
-                for file in entries {
-                    if file.path.ends_with('/') {
-                        add_entries(file, &mut versions)?;
-                    }
-                }
-            }
-        }
-    } else {
-        for file in entries {
-            if file.path.ends_with('/') {
-                add_entries(file, &mut versions)?;
-            }
-        }
-    }
-
-    versions.sort();
-    versions.dedup();
-    if let Some(limit) = limit {
-        let len = versions.len();
-        if len > limit {
-            versions = versions.drain(versions.len() - limit..).collect();
-        }
-    }
-
-    Ok(versions)
 }
 
 fn add_entries(file: File, versions: &mut Vec<PackageVersion>) -> anyhow::Result<()> {
