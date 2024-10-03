@@ -73,6 +73,28 @@ impl Registry {
             .into_json()?;
         Ok(branches)
     }
+
+    pub fn list_packages(&self) -> Result<Vec<File>> {
+        let files: Vec<File> = ureq::get(&format!("{}/", self.url)).call()?.into_json()?;
+
+        let mut packages = Vec::default();
+        for file in files {
+            match file.path.as_str() {
+                "core/" | "lang/" => packages.push(file),
+                "deps/" => (), // ignore
+                _ => {
+                    let files: Vec<File> = ureq::get(&format!("{}/{}", self.url, file.path))
+                        .call()?
+                        .into_json()?;
+                    packages.extend(files);
+                }
+            }
+        }
+
+        packages.sort_by(|a, b| a.path.cmp(&b.path));
+
+        Ok(packages)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,7 +131,12 @@ pub struct PackageVersion {
 
 impl std::fmt::Display for PackageVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:20} {}", self.version, self.last_modified.format("%Y-%m-%d %H:%M:%s"))
+        write!(
+            f,
+            "{:20} {}",
+            self.version,
+            self.last_modified.format("%Y-%m-%d %H:%M:%s")
+        )
     }
 }
 

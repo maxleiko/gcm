@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use anyhow::Result;
 use clap::Parser;
@@ -6,75 +6,82 @@ use semver::Version;
 
 use crate::package::Package;
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Default)]
 #[clap(about = "Installs a package", alias = "i")]
 pub struct Install {
     #[arg(
         help = "[branch] installs the latest version of that branch for core, lang and explorer\n[package] [branch_or_version] installs the latest branch of package or the specific version"
     )]
-    args: Option<Vec<String>>,
+    pub args: Option<Vec<String>>,
 
     #[arg(long, help = "The architecture to install GreyCat for")]
-    arch: Option<String>,
+    pub arch: Option<String>,
 
     #[arg(
         long,
-        help = "By default install_dir=$HOME/.greycat/versions, this allows to override the path"
+        help = "The installation directory, defaults to $GREYCAT_HOME or $HOME/.greycat"
     )]
-    install_dir: Option<PathBuf>,
+    pub dir: Option<PathBuf>,
 }
 
 impl Install {
     pub fn run(self) -> Result<()> {
-        let install_dir = self.install_dir.as_deref();
+        let dir = self.dir.unwrap_or_else(|| {
+            std::env::var("GREYCAT_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    let mut home_dir = home::home_dir().unwrap_or_else(|| "/".into());
+                    home_dir.push(".greycat");
+                    home_dir
+                })
+        });
 
-        match self.args {
-            Some(args) if args.len() == 1 => {
-                let branch = &args[0];
+        // clean up previous directories to prevent ghost files
+        fs::remove_dir_all(dir.join("bin")).ok();
+        fs::remove_dir_all(dir.join("lib")).ok();
+        fs::remove_dir_all(dir.join("include")).ok();
+        fs::remove_dir_all(dir.join("misc")).ok();
 
+        match self.args.as_deref() {
+            Some([branch]) => {
                 let arch = self.arch.or_else(|| Some(get_arch()));
-                
+
                 let core = Package::new("core", arch, branch);
                 eprint!("installing {}...", core);
-                core.install_latest(install_dir)?;
+                core.install_latest(&dir)?;
 
                 let lang = Package::new("lang", None, branch);
                 eprint!("installing {}...", lang);
-                lang.install_latest(install_dir).ok();
-                
+                lang.install_latest(&dir).ok();
+
                 let explorer = Package::new("apps/explorer", None, branch);
                 eprint!("installing {}...", explorer);
-                explorer.install_latest(install_dir).ok();
+                explorer.install_latest(&dir).ok();
             }
-            Some(mut args) if args.len() == 2 => {
-                let branch = args.pop().unwrap();
-                let name = args.pop().unwrap();
+            Some([name, branch_or_version]) => match Version::parse(branch_or_version) {
+                Ok(version) => {
+                    let arch = if name == "core" {
+                        self.arch.or_else(|| Some(get_arch()))
+                    } else {
+                        None
+                    };
+                    let pkg = Package::new(name, arch, version.pre.as_str());
 
-                match Version::parse(&branch) {
-                    Ok(version) => {
-                        let arch = if name == "core" {
-                            self.arch.or_else(|| Some(get_arch()))
-                        } else {
-                            None
-                        };
-                        let pkg = Package::new(&name, arch, version.pre.as_str());
-
-                        eprint!("installing {}...", pkg);
-                        pkg.install(version.clone(), install_dir)?;
-                    }
-                    Err(_) => {
-                        let arch = if name == "core" {
-                            self.arch.or_else(|| Some(get_arch()))
-                        } else {
-                            None
-                        };
-                        let pkg = Package::new(&name, arch, &branch);
-
-                        eprint!("installing {}...", pkg);
-                        pkg.install_latest(install_dir)?;
-                    }
+                    eprint!("installing {}...", pkg);
+                    pkg.install(version.clone(), &dir)?;
                 }
-            }
+                Err(_) => {
+                    let arch = if name == "core" {
+                        self.arch.or_else(|| Some(get_arch()))
+                    } else {
+                        None
+                    };
+                    let pkg = Package::new(name, arch, branch_or_version);
+
+                    eprint!("installing {}...", pkg);
+                    pkg.install_latest(&dir)?;
+                }
+            },
             Some(_) => anyhow::bail!(
                 "too many arguments, expected either: <branch> or <name> <branch_or_version>"
             ),
@@ -86,11 +93,21 @@ impl Install {
                 let explorer = Package::new("apps/explorer", None, "stable");
 
                 eprint!("installing {}...", core);
-                core.install_latest(install_dir)?;
+                core.install_latest(&dir)?;
                 eprint!("installing {}...", lang);
-                lang.install_latest(install_dir).ok();
+                lang.install_latest(&dir).ok();
                 eprint!("installing {}...", explorer);
-                explorer.install_latest(install_dir).ok();
+                explorer.install_latest(&dir).ok();
+            }
+        }
+
+        for entry in fs::read_dir(dir.join("bin"))? {
+            let entry = entry?;
+            let filepath = entry.path();
+            if filepath.is_file() {
+                let mut perm = fs::metadata(&filepath)?.permissions();
+                perm.set_mode(0o755);
+                fs::set_permissions(&filepath, perm)?;
             }
         }
 
@@ -106,6 +123,11 @@ fn get_arch() -> String {
 #[cfg(all(target_arch = "x86_64", target_os = "macos"))]
 fn get_arch() -> String {
     "x64-apple".to_owned()
+}
+
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+fn get_arch() -> String {
+    "arm64-apple".to_owned()
 }
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]

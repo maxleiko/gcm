@@ -25,11 +25,7 @@ impl Package {
         }
     }
 
-    pub fn install(
-        &self,
-        version: semver::Version,
-        install_dir: Option<&Path>,
-    ) -> Result<Option<Version>> {
+    pub fn install(&self, version: semver::Version, install_dir: &Path) -> Result<Option<Version>> {
         let g_version = Version {
             major_minor: format!("{}.{}", version.major, version.minor),
             version: version.to_string(),
@@ -37,47 +33,42 @@ impl Package {
 
         match self.download(&g_version) {
             Ok(archive) => {
-                let install_dir = match install_dir {
-                    Some(install_dir) => install_dir.to_owned(),
-                    None => {
-                        let mut home_dir = home::home_dir().unwrap_or_else(|| "/".into());
-                        home_dir.push(".greycat");
-                        home_dir
-                    }
-                };
-
-                let archive = SmartZipExtractor { reader: archive };
-                archive
+                SmartZipExtractor { reader: archive }
                     .smart_extract(install_dir)
                     .context("extracting package content")?;
-
-                eprintln!("{g_version}");
                 Ok(Some(g_version))
             }
             Err(_) => Ok(None),
         }
     }
 
-    pub fn install_latest(&self, install_dir: Option<&Path>) -> Result<Option<Version>> {
+    pub fn install_latest(&self, install_dir: &Path) -> Result<Option<Version>> {
         use std::io::Write;
-        use termcolor::{StandardStream, WriteColor, ColorChoice, ColorSpec, Color};
+        use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
         let latest = match self.latest() {
             Ok(latest) => latest,
             Err(_) => {
                 let mut stderr = StandardStream::stderr(ColorChoice::AlwaysAnsi);
-                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
                 writeln!(&mut stderr, "not found")?;
                 stderr.reset()?;
                 return Ok(None);
             }
         };
+
         let version = semver::Version::parse(&latest.version)?;
         match self.install(version, install_dir)? {
-            Some(version) => Ok(Some(version)),
+            Some(version) => {
+                let mut stderr = StandardStream::stderr(ColorChoice::AlwaysAnsi);
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                writeln!(&mut stderr, "{}", version.version)?;
+                stderr.reset()?;
+                Ok(Some(version))
+            }
             None => {
                 let mut stderr = StandardStream::stderr(ColorChoice::AlwaysAnsi);
-                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+                stderr.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
                 writeln!(&mut stderr, "not found")?;
                 stderr.reset()?;
                 Ok(None)

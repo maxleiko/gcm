@@ -32,3 +32,19 @@ fn main() -> Result<()> {
         Command::Update(cmd) => cmd.run(),
     }
 }
+
+struct node<T> {
+    value: T,
+}
+
+fn foo(n: node<f64>) {}
+
+struct Foo {
+    value: node<f64>,
+}
+
+impl Foo {
+    fn foo() {
+        
+    }
+}
