@@ -1,4 +1,4 @@
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 use clap::Parser;
@@ -101,12 +101,13 @@ impl Install {
             }
         }
 
+        #[cfg(not(target_os = "windows"))]
         for entry in fs::read_dir(dir.join("bin"))? {
             let entry = entry?;
             let filepath = entry.path();
             if filepath.is_file() {
                 let mut perm = fs::metadata(&filepath)?.permissions();
-                perm.set_mode(0o755);
+                std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
                 fs::set_permissions(&filepath, perm)?;
             }
         }
