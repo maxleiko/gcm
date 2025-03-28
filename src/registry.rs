@@ -99,28 +99,8 @@ impl Registry {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct File {
-    #[serde(deserialize_with = "greycat_time_to_datetime_utc")]
     pub last_modification: DateTime<Local>,
     pub path: String,
-}
-
-fn greycat_time_to_datetime_utc<'de, D>(de: D) -> Result<DateTime<Local>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-
-    #[derive(Deserialize)]
-    struct GreyCatTime {
-        epoch: i32,
-        us: i32,
-    }
-
-    let time = GreyCatTime::deserialize(de)?;
-    let micros = ((time.epoch as i64) * 1_000_000) + (time.us as i64);
-    let date =
-        DateTime::from_timestamp_micros(micros).ok_or_else(|| D::Error::custom("invalid time"))?;
-    Ok(date.with_timezone(&Local))
 }
 
 #[derive(Debug)]
