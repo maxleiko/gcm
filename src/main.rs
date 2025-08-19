@@ -1,5 +1,3 @@
-#![feature(io_error_more)]
-
 mod cmd;
 mod package;
 mod registry;
