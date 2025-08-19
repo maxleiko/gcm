@@ -24,33 +24,32 @@ impl Registry {
         branch: &str,
         limit: Option<usize>,
     ) -> Result<Vec<PackageVersion>> {
-        let entries: Vec<File> = ureq::get(&format!("{}/{name}/{branch}", self.url))
+        let entries: Vec<File> = ureq::get(&format!("{}/{name}/{branch}/", self.url))
             .call()
             .with_context(|| format!("no version found for \"{name}/{branch}\""))?
             .into_json()?;
 
         let mut versions = Vec::default();
 
-        if name == "core" {
-            // 'core' is target-dependant, meaning we have to browse one more level to get
-            // to the different versions
-            for file in entries {
-                if file.path.ends_with('/') {
-                    let entries: Vec<File> = ureq::get(&format!("{}/{}", self.url, file.path))
-                        .call()
-                        .with_context(|| format!("no version found for \"{name}/{branch}\""))?
-                        .into_json()?;
-                    for file in entries {
-                        if file.path.ends_with('/') {
-                            add_entries(file, &mut versions)?;
+        for file in entries {
+            if file.path.ends_with('/') {
+                let targets: Vec<File> = ureq::get(&format!("{}/{}", self.url, file.path))
+                    .call()
+                    .with_context(|| format!("no version found for \"{name}/{branch}\""))?
+                    .into_json()?;
+                for file in targets {
+                    if file.path.ends_with('/') {
+                        add_entries(file, &mut versions)?;
+                    } else if file.path.ends_with(".zip") {
+                        let (_, version) =
+                            file.path[..file.path.len() - 4].rsplit_once('/').unwrap();
+                        if let Ok(version) = Version::from_str(version) {
+                            versions.push(PackageVersion {
+                                last_modified: file.last_modification,
+                                version,
+                            });
                         }
                     }
-                }
-            }
-        } else {
-            for file in entries {
-                if file.path.ends_with('/') {
-                    add_entries(file, &mut versions)?;
                 }
             }
         }

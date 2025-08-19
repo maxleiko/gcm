@@ -47,15 +47,15 @@ impl Install {
                 let arch = self.arch.or_else(|| Some(get_arch()));
 
                 let core = Package::new("core", arch, branch);
-                eprint!("installing {core}...");
+                eprint!("installing {core}        ");
                 core.install_latest(&dir)?;
 
                 let lang = Package::new("lang", None, branch);
-                eprint!("installing {lang}...");
+                eprint!("installing {lang}        ");
                 lang.install_latest(&dir).ok();
 
                 let explorer = Package::new("explorer", Some("noarch".to_string()), branch);
-                eprint!("installing {explorer}...");
+                eprint!("installing {explorer}    ");
                 explorer.install_latest(&dir).ok();
             }
             Some([name, branch_or_version]) => match Version::parse(branch_or_version) {
@@ -92,11 +92,11 @@ impl Install {
                 let lang = Package::new("lang", None, "stable");
                 let explorer = Package::new("explorer", Some("noarch".to_string()), "stable");
 
-                eprint!("installing {core}...");
+                eprint!("installing {core}        ");
                 core.install_latest(&dir)?;
-                eprint!("installing {lang}...");
+                eprint!("installing {lang}        ");
                 lang.install_latest(&dir).ok();
-                eprint!("installing {explorer}...");
+                eprint!("installing {explorer}    ");
                 explorer.install_latest(&dir).ok();
             }
         }
