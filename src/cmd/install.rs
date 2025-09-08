@@ -50,7 +50,7 @@ impl Install {
                 eprint!("installing {core}        ");
                 core.install_latest(&dir)?;
 
-                let lang = Package::new("lang", None, branch);
+                let lang = Package::new("lang", Some("noarch".to_string()), branch);
                 eprint!("installing {lang}        ");
                 lang.install_latest(&dir).ok();
 
@@ -89,7 +89,7 @@ impl Install {
                 let arch = self.arch.or_else(|| Some(get_arch()));
 
                 let core = Package::new("core", arch, "stable");
-                let lang = Package::new("lang", None, "stable");
+                let lang = Package::new("lang", Some("noarch".to_string()), "stable");
                 let explorer = Package::new("explorer", Some("noarch".to_string()), "stable");
 
                 eprint!("installing {core}        ");
