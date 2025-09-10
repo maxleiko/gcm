@@ -86,9 +86,7 @@ impl Install {
                 "too many arguments, expected either: <branch> or <name> <branch_or_version>"
             ),
             None => {
-                let arch = self.arch.or_else(|| Some(get_arch()));
-
-                let core = Package::new("core", arch, "stable");
+                let core = Package::new("core", self.arch.or_else(|| Some(get_arch())), "stable");
                 let lang = Package::new("lang", Some("noarch".to_string()), "stable");
                 let explorer = Package::new("explorer", Some("noarch".to_string()), "stable");
 
